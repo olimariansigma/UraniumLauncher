@@ -10,6 +10,7 @@ import okio.FileSystem
 
 @Serializable
 data class Settings(
+    /** Only read once, to turn the pre-accounts username into an offline account. */
     val offlineUsername: String = "Player",
     /** 0 = pick automatically from the machine's RAM. */
     val memoryMb: Int = 0,
@@ -17,6 +18,9 @@ data class Settings(
     val javaPath: String = "",
     val extraJvmArgs: String = "",
     val parallelDownloads: Int = 12,
+    /** Overrides for the credentials baked in at build time; blank = use the built-in ones. */
+    val msaClientId: String = "",
+    val curseForgeApiKey: String = "",
 )
 
 class SettingsStore(private val paths: LauncherPaths, private val fs: FileSystem = FileSystem.SYSTEM) {

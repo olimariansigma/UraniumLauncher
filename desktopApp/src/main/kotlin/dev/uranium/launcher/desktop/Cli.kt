@@ -1,24 +1,34 @@
 package dev.uranium.launcher.desktop
 
 import dev.uranium.launcher.Launcher
+import dev.uranium.launcher.content.ContentProvider
+import dev.uranium.launcher.content.ContentQuery
 import dev.uranium.launcher.core.Progress
 import dev.uranium.launcher.instance.Instance
+import dev.uranium.launcher.instance.LoaderType
 import dev.uranium.launcher.launch.GameLogParser
-import dev.uranium.launcher.modrinth.ModrinthQuery
 import kotlinx.coroutines.runBlocking
 import kotlin.system.exitProcess
 
 /**
  * Headless entry point, mainly for smoke tests and CI:
  *
- *     --cli versions                     list the newest releases
- *     --cli install <version>            download a version and its Java runtime
- *     --cli launch <version> [--dry-run] install, then start (or just print the command)
- *     --cli search <query>               search Modrinth
+ *     --cli versions                                  list the newest releases
+ *     --cli loaders <loader> <version>                list loader builds for a Minecraft version
+ *     --cli install <version> [--loader <loader>]     download a version (and loader) and its Java
+ *     --cli launch <version> [--loader <loader>] [--dry-run]
+ *     --cli search <query> [--curseforge]             search Modrinth or CurseForge
+ *     --cli scan                                      look for Prism Launcher instances
+ *     --cli login                                     test Microsoft sign-in (prints a device code)
  */
 object Cli {
     fun run(args: List<String>): Nothing {
         val launcher = Launcher()
+        fun option(name: String): String? = args.indexOf(name).takeIf { it >= 0 }?.let { args.getOrNull(it + 1) }
+        fun loader(name: String?): LoaderType =
+            LoaderType.entries.firstOrNull { it.name.equals(name ?: "vanilla", ignoreCase = true) }
+                ?: error("Unknown loader \"$name\"")
+
         val code = runBlocking {
             when (args.firstOrNull()) {
                 "versions" -> {
@@ -27,9 +37,19 @@ object Cli {
                     manifest.versions.filter { it.isRelease }.take(15).forEach { println("  ${it.id}") }
                     0
                 }
+                "loaders" -> {
+                    val versions = launcher.loaderVersions(loader(args.getOrNull(1)), args.getOrNull(2) ?: return@runBlocking usage())
+                    println("${versions.size} builds")
+                    versions.take(8).forEach { println("  ${it.version}${if (it.recommended) " (recommended)" else if (!it.stable) " (unstable)" else ""}") }
+                    0
+                }
                 "install", "launch" -> {
                     val version = args.getOrNull(1) ?: return@runBlocking usage()
-                    val instance = Instance(id = "cli-$version", name = "CLI $version", mcVersion = version)
+                    val loaderType = loader(option("--loader"))
+                    val instance = Instance(
+                        id = "cli-$version-${loaderType.name.lowercase()}", name = "CLI $version",
+                        mcVersion = version, loader = loaderType, loaderVersion = option("--loader-version"),
+                    )
                     var lastStage = ""
                     val spec = launcher.prepareLaunch(instance) { progress: Progress ->
                         // One line per stage plus a coarse percentage keeps CI logs readable.
@@ -48,9 +68,24 @@ object Cli {
                     launcher.platform.createGameRunner().run(spec, log::accept).also { log.finish() }
                 }
                 "search" -> {
-                    val result = launcher.modrinth.search(ModrinthQuery(text = args.drop(1).joinToString(" "), limit = 10))
-                    println("${result.totalHits} results")
+                    val provider = if ("--curseforge" in args) ContentProvider.CURSEFORGE else ContentProvider.MODRINTH
+                    val text = args.drop(1).filterNot { it.startsWith("--") }.joinToString(" ")
+                    val result = launcher.content.source(provider).search(ContentQuery(text = text, limit = 10))
+                    println("${result.total} results on ${provider.label}")
                     result.hits.forEach { println("  ${it.title} by ${it.author} - ${it.downloads} downloads (${it.pageUrl})") }
+                    0
+                }
+                "login" -> {
+                    val code = launcher.microsoft.requestDeviceCode()
+                    println("Open ${code.verificationUri} and enter the code ${code.userCode}")
+                    val account = launcher.microsoft.minecraftAccount(launcher.microsoft.awaitDeviceCode(code))
+                    println("Signed in as ${account.username} (${account.uuid})")
+                    0
+                }
+                "scan" -> {
+                    val found = launcher.scanForImports { }
+                    println("${found.size} instances found")
+                    found.forEach { println("  ${it.name}: ${it.mcVersion} ${it.loader.displayName} ${it.loaderVersion.orEmpty()} (${it.path})") }
                     0
                 }
                 else -> usage()
@@ -60,7 +95,10 @@ object Cli {
     }
 
     private fun usage(): Int {
-        System.err.println("Usage: --cli versions | install <version> | launch <version> [--dry-run] | search <query>")
+        System.err.println(
+            "Usage: --cli versions | loaders <loader> <version> | install <version> [--loader <loader>] | " +
+                "launch <version> [--loader <loader>] [--dry-run] | search <query> [--curseforge] | scan | login"
+        )
         return 2
     }
 }

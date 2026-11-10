@@ -61,13 +61,25 @@ class GameInstaller(
         val version = resolver.resolve(versionId)
 
         val jarId = version.jar ?: version.id
-        val clientJar = paths.versionJar(jarId)
+        val vanillaJar = paths.versionJar(jarId)
         val client = version.downloads["client"]
             ?: error("Version \"$versionId\" has no client download")
         http.downloadAll(
-            listOf(DownloadTask(client.url, clientJar, client.sha1, client.size)),
+            listOf(DownloadTask(client.url, vanillaJar, client.sha1, client.size)),
             "Downloading Minecraft $jarId", parallelism, progress,
         )
+        val clientJar = if (needsOwnJar(version, jarId)) {
+            // Forge-style loaders identify the game jar on the classpath as "<version id>.jar", so
+            // give them the copy the official launcher would have made.
+            paths.versionJar(version.id).also { own ->
+                if (fs.metadataOrNull(own)?.size != fs.metadataOrNull(vanillaJar)?.size) {
+                    own.parent?.let(fs::createDirectories)
+                    fs.copy(vanillaJar, own)
+                }
+            }
+        } else {
+            vanillaJar
+        }
 
         val plan = planLibraries(version, RuleEnv.of(platform), paths, platform.arch.is64Bit)
         http.downloadAll(plan.downloads, "Downloading libraries", parallelism, progress)
@@ -99,6 +111,9 @@ class GameInstaller(
     }
 
     companion object {
+        fun needsOwnJar(version: VersionJson, jarId: String): Boolean =
+            version.id != jarId && version.arguments?.jvm.orEmpty().any { it.toString().contains("\${version_name}") }
+
         fun planLibraries(version: VersionJson, env: RuleEnv, paths: LauncherPaths, is64Bit: Boolean): LibraryPlan {
             val downloads = ArrayList<DownloadTask>()
             val classpath = LinkedHashMap<String, Path>()

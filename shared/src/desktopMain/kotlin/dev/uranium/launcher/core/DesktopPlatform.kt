@@ -6,6 +6,8 @@ import okio.Path
 import okio.Path.Companion.toOkioPath
 import okio.Path.Companion.toPath
 import java.awt.Desktop
+import java.awt.Toolkit
+import java.awt.datatransfer.StringSelection
 import java.io.File
 import java.lang.management.ManagementFactory
 import java.net.URI
@@ -60,7 +62,39 @@ object DesktopPlatform : JvmPlatformServices() {
         true
     }.getOrDefault(false)
 
+    override fun copyToClipboard(text: String) {
+        runCatching { Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(text), null) }
+    }
+
     override fun createGameRunner(): GameRunner = ProcessGameRunner()
+
+    override val downloadsDir: Path?
+        get() = File(System.getProperty("user.home"), "Downloads").takeIf { it.isDirectory }?.toOkioPath()
+
+    /**
+     * Where other launchers usually keep their data, followed by the broad places a portable copy
+     * could have been unzipped to: the home folder and every drive root.
+     */
+    override fun importSearchRoots(): List<Path> {
+        val home = File(System.getProperty("user.home"))
+        val appData = System.getenv("APPDATA")?.let(::File)
+        val localAppData = System.getenv("LOCALAPPDATA")?.let(::File)
+        val known = buildList {
+            for (name in listOf("PrismLauncher", "PolyMC", "MultiMC")) {
+                appData?.let { add(File(it, name)) }
+                localAppData?.let { add(File(it, name)) }
+                add(File(home, ".local/share/$name"))
+                add(File(home, "Library/Application Support/$name"))
+            }
+            add(File(home, "scoop/persist/prismlauncher"))
+            add(File(home, "scoop/persist/multimc"))
+            add(File(home, ".var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher"))
+            add(File(home, ".var/app/org.polymc.PolyMC/data/PolyMC"))
+            System.getenv("PRISMLAUNCHER_DATA_DIR")?.let { add(File(it)) }
+        }
+        val broad = listOf(home) + File.listRoots().orEmpty().filter { os == OsType.WINDOWS || it.path != "/" }
+        return (known + broad).filter { it.isDirectory }.map { it.absoluteFile.toOkioPath() }.distinct()
+    }
 
     override fun systemJavaCandidates(): List<Path> {
         val exe = if (os == OsType.WINDOWS) "java.exe" else "java"

@@ -9,13 +9,19 @@ import io.ktor.client.engine.HttpClientEngineFactory
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.request.HttpRequestBuilder
+import io.ktor.client.request.forms.submitForm
 import io.ktor.client.request.get
 import io.ktor.client.request.header
+import io.ktor.client.request.post
 import io.ktor.client.request.prepareGet
+import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
+import io.ktor.http.contentType
 import io.ktor.http.isSuccess
+import io.ktor.http.parameters
 import io.ktor.utils.io.readAvailable
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -48,6 +54,10 @@ class HttpStatusException(val url: String, val status: Int, val bodySnippet: Str
 
 class ChecksumException(val url: String, val expected: String, val actual: String) :
     Exception("Checksum mismatch for $url (expected $expected, got $actual)")
+
+data class HttpResult(val status: Int, val body: String) {
+    val ok: Boolean get() = status in 200..299
+}
 
 data class DownloadTask(
     val url: String,
@@ -85,6 +95,27 @@ class Http(engine: HttpClientEngineFactory<*>, private val fs: FileSystem = File
 
     suspend inline fun <reified T> getJson(url: String, noinline configure: HttpRequestBuilder.() -> Unit = {}): T =
         getJson(url, serializer<T>(), configure)
+
+    /** Requests where a non-2xx status is an expected, meaningful answer (OAuth polling etc.). */
+    suspend fun getResult(url: String, headers: Map<String, String> = emptyMap()): HttpResult = retrying(url) {
+        val response = client.get(url) { headers.forEach { (name, value) -> header(name, value) } }
+        HttpResult(response.status.value, response.bodyAsText())
+    }
+
+    suspend fun postForm(url: String, fields: Map<String, String>): HttpResult = retrying(url) {
+        val response = client.submitForm(url, parameters { fields.forEach { (name, value) -> append(name, value) } })
+        HttpResult(response.status.value, response.bodyAsText())
+    }
+
+    suspend fun postJson(url: String, json: String, headers: Map<String, String> = emptyMap()): HttpResult = retrying(url) {
+        val response = client.post(url) {
+            contentType(ContentType.Application.Json)
+            header(HttpHeaders.Accept, "application/json")
+            headers.forEach { (name, value) -> header(name, value) }
+            setBody(json)
+        }
+        HttpResult(response.status.value, response.bodyAsText())
+    }
 
     suspend fun getBytes(url: String): ByteArray = retrying(url) {
         val response = client.get(url)

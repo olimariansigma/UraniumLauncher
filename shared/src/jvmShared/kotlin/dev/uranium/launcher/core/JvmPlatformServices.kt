@@ -28,6 +28,12 @@ abstract class JvmPlatformServices : PlatformServices {
         }
     }
 
+    override fun readZipEntry(zip: Path, entry: String): ByteArray? = ZipFile(zip.toFile()).use { archive ->
+        archive.getEntry(entry)?.let { archive.getInputStream(it).use { input -> input.readBytes() } }
+    }
+
+    override fun env(name: String): String? = System.getenv(name)?.takeIf { it.isNotBlank() }
+
     override fun markExecutable(path: Path) {
         path.toFile().setExecutable(true, false)
     }

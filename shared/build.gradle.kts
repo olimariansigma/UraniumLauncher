@@ -8,14 +8,26 @@ plugins {
     alias(libs.plugins.kotlinSerialization)
 }
 
-// Generates BuildInfo.kt so the launcher version lives in one place (gradle.properties).
+// Generates BuildInfo.kt so the launcher version and the build-time API credentials live in one
+// place. The credentials come from the environment (CI secrets) or ~/.gradle/gradle.properties and
+// are never committed; both can also be supplied at runtime (see README).
 val appVersion = providers.gradleProperty("uranium.version")
+val msaClientId = providers.environmentVariable("URANIUM_MSA_CLIENT_ID")
+    .orElse(providers.gradleProperty("uranium.msaClientId")).orElse("")
+val curseForgeKey = providers.environmentVariable("CURSEFORGE_API_KEY")
+    .orElse(providers.gradleProperty("uranium.curseforgeApiKey")).orElse("")
 val generateBuildInfo = tasks.register("generateBuildInfo") {
     val outputDir = layout.buildDirectory.dir("generated/buildInfo/kotlin")
     val version = appVersion
+    val clientId = msaClientId
+    val cfKey = curseForgeKey
     inputs.property("version", version)
+    inputs.property("msaClientId", clientId)
+    inputs.property("curseForgeKey", cfKey)
     outputs.dir(outputDir)
     doLast {
+        // CurseForge keys contain '$', which would otherwise start a Kotlin string template.
+        fun literal(value: String) = value.trim().replace("\\", "\\\\").replace("\"", "\\\"").replace("$", "\\$")
         val file = outputDir.get().file("dev/uranium/launcher/BuildInfo.kt").asFile
         file.parentFile.mkdirs()
         file.writeText(
@@ -24,7 +36,9 @@ val generateBuildInfo = tasks.register("generateBuildInfo") {
             |
             |object BuildInfo {
             |    const val NAME = "UraniumLauncher"
-            |    const val VERSION = "${version.get()}"
+            |    const val VERSION = "${literal(version.get())}"
+            |    const val MSA_CLIENT_ID = "${literal(clientId.get())}"
+            |    const val CURSEFORGE_API_KEY = "${literal(cfKey.get())}"
             |}
             |""".trimMargin()
         )

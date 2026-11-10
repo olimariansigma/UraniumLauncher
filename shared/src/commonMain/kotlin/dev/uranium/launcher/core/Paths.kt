@@ -12,6 +12,7 @@ class LauncherPaths(val root: Path) {
     val runtimes: Path = root / "runtimes"
     val instances: Path = root / "instances"
     val settingsFile: Path = root / "settings.json"
+    val accountsFile: Path = root / "accounts.json"
 
     fun versionDir(id: String): Path = versions / id
     fun versionJson(id: String): Path = versions / id / "$id.json"

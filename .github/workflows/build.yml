@@ -8,6 +8,12 @@ on:
 permissions:
   contents: read
 
+# Optional service credentials, baked into the builds when the repository secrets exist.
+# Without them the launcher still builds; players can add their own under Settings > Services.
+env:
+  CURSEFORGE_API_KEY: ${{ secrets.CURSEFORGE_API_KEY }}
+  URANIUM_MSA_CLIENT_ID: ${{ secrets.URANIUM_MSA_CLIENT_ID }}
+
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true

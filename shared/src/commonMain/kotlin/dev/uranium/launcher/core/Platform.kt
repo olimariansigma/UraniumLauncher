@@ -43,10 +43,23 @@ interface PlatformServices {
     /** Extracts [zip] into [destDir], skipping entries whose path starts with any of [exclude]. */
     fun extractZip(zip: Path, destDir: Path, exclude: List<String> = emptyList())
 
+    /** Reads one entry of a zip/jar into memory, or null when it is absent. */
+    fun readZipEntry(zip: Path, entry: String): ByteArray?
+
     fun markExecutable(path: Path)
+
+    fun env(name: String): String?
+
+    /** The user's Downloads folder, where manually downloaded files are looked for; null if unknown. */
+    val downloadsDir: Path?
+
+    /** Folders worth scanning for other launchers' instances, most likely first. */
+    fun importSearchRoots(): List<Path>
 
     /** Opens a URL or folder in the system browser / file manager. Returns false if unsupported. */
     fun open(target: String): Boolean
+
+    fun copyToClipboard(text: String)
 
     fun createGameRunner(): GameRunner
 

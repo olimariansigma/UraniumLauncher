@@ -1,6 +1,8 @@
 package dev.uranium.launcher.core
 
 import android.app.ActivityManager
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -54,12 +56,23 @@ object AndroidPlatform : JvmPlatformServices() {
         }.getOrDefault(false)
     }
 
+    override fun copyToClipboard(text: String) {
+        runCatching {
+            val clipboard = appContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText("Uranium Launcher", text))
+        }
+    }
+
     override fun createGameRunner(): GameRunner = object : GameRunner {
         override suspend fun run(spec: LaunchSpec, onOutput: (String) -> Unit): Int =
             throw UnsupportedOperationException(launchUnavailableReason)
     }
 
     override fun systemJavaCandidates(): List<Path> = emptyList()
+
+    override val downloadsDir: Path? get() = null
+
+    override fun importSearchRoots(): List<Path> = emptyList()
 }
 
 actual val platform: PlatformServices get() = AndroidPlatform

@@ -24,8 +24,6 @@ data class Instance(
     val mcVersion: String,
     val loader: LoaderType = LoaderType.VANILLA,
     val loaderVersion: String? = null,
-    /** Id of the descriptor under `versions/` that is launched; equals [mcVersion] for vanilla. */
-    val versionId: String = mcVersion,
     val createdAt: Long = 0,
     val lastPlayedAt: Long = 0,
     /** Per-instance overrides; null means "use the global setting". */
@@ -50,9 +48,18 @@ class InstanceStore(private val paths: LauncherPaths, private val fs: FileSystem
         fs.writeTextAtomic(paths.instanceFile(instance.id), PrettyJson.encodeToString(Instance.serializer(), instance))
     }
 
-    fun create(name: String, mcVersion: String, now: Long): Instance {
+    fun create(
+        name: String,
+        mcVersion: String,
+        now: Long,
+        loader: LoaderType = LoaderType.VANILLA,
+        loaderVersion: String? = null,
+    ): Instance {
         val cleanName = name.trim().ifEmpty { mcVersion }
-        val instance = Instance(id = uniqueId(cleanName), name = cleanName, mcVersion = mcVersion, createdAt = now)
+        val instance = Instance(
+            id = uniqueId(cleanName), name = cleanName, mcVersion = mcVersion,
+            loader = loader, loaderVersion = loaderVersion.takeIf { loader != LoaderType.VANILLA }, createdAt = now,
+        )
         save(instance)
         return instance
     }
