@@ -11,6 +11,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
 import okio.FileSystem
+import okio.Path
 
 class MojangMeta(
     private val http: Http,
@@ -33,16 +34,30 @@ class MojangMeta(
         LauncherJson.decodeFromString<VersionManifest>(fresh).also { cached = it }
     }
 
-    /** Loads `versions/<id>/<id>.json`, downloading it from Mojang when it is a vanilla version. */
+    /**
+     * Loads `versions/<id>/<id>.json`. Vanilla descriptors are downloaded from Mojang and refreshed
+     * when Mojang republishes them (it does, e.g. to swap a vulnerable library); descriptors that
+     * are not in the manifest (mod loader profiles) are used exactly as they are on disk.
+     */
     suspend fun versionJson(id: String): VersionJson = withContext(Dispatchers.IO) {
         val file = paths.versionJson(id)
         val entry = runCatching { manifest() }.getOrNull()?.versions?.firstOrNull { it.id == id }
         if (!fs.exists(file)) {
             entry ?: throw IllegalArgumentException("Unknown Minecraft version \"$id\"")
             http.download(DownloadTask(entry.url, file, entry.sha1))
+        } else if (entry?.sha1 != null && !entry.sha1.equals(sha1Of(file), ignoreCase = true)) {
+            // Stale copy: try to update, but keep playing with the old one when offline.
+            try {
+                http.download(DownloadTask(entry.url, file, entry.sha1))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            }
         }
         LauncherJson.decodeFromString<VersionJson>(fs.read(file) { readUtf8() })
     }
+
+    private fun sha1Of(file: Path): String = fs.read(file) { readByteString() }.sha1().hex()
 
     companion object {
         const val MANIFEST_URL = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
