@@ -1,0 +1,12 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+.kotlin/
+.DS_Store
+captures/
+*.keystore
+*.jks
+worker/node_modules/
+worker/.wrangler/
