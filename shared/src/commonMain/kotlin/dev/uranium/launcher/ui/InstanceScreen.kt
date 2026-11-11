@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -79,6 +80,7 @@ fun InstanceScreen(launcher: Launcher, instanceId: String, compact: Boolean, onB
     val activity = activityMap[instance.id]
     val busy = activity is InstanceActivity.Working || activity is InstanceActivity.Running
     var tab by rememberSaveable { mutableStateOf(InstanceTab.MODS) }
+    var showShare by remember { mutableStateOf(false) }
     val pad = if (compact) 16.dp else 28.dp
 
     Column(Modifier.fillMaxSize().padding(start = pad, end = pad, top = pad), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -102,6 +104,10 @@ fun InstanceScreen(launcher: Launcher, instanceId: String, compact: Boolean, onB
                             LoaderTag(instance.loader, filled = true)
                         }
                     }
+                    IconButton(onClick = { showShare = true }) {
+                        Icon(Icons.Default.Share, contentDescription = "Share this instance", tint = Color.White)
+                    }
+                    Spacer(Modifier.width(4.dp))
                     if (busy) {
                         FilledTonalButton(onClick = { launcher.stop(instance.id) }) {
                             Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -125,6 +131,8 @@ fun InstanceScreen(launcher: Launcher, instanceId: String, compact: Boolean, onB
         }
 
         Segmented(InstanceTab.entries, tab, { it.label }, { tab = it })
+
+        if (showShare) ShareDialog(launcher, instance, onDismiss = { showShare = false })
 
         val type = tab.type
         if (type != null) {

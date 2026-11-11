@@ -5,6 +5,7 @@ import dev.uranium.launcher.account.AccountKind
 import dev.uranium.launcher.account.AccountsState
 import dev.uranium.launcher.account.MicrosoftAuth
 import dev.uranium.launcher.content.ContentManager
+import dev.uranium.launcher.content.ContentProvider
 import dev.uranium.launcher.content.ContentQuery
 import dev.uranium.launcher.content.ContentSort
 import dev.uranium.launcher.content.ContentType
@@ -28,6 +29,9 @@ import dev.uranium.launcher.mojang.Rule
 import dev.uranium.launcher.mojang.RuleEnv
 import dev.uranium.launcher.mojang.VersionJson
 import dev.uranium.launcher.mojang.rulesAllow
+import dev.uranium.launcher.share.ShareService
+import dev.uranium.launcher.share.SharedContent
+import dev.uranium.launcher.share.SharedPack
 import dev.uranium.launcher.ui.compactCount
 import okio.Path.Companion.toPath
 import kotlin.test.Test
@@ -273,6 +277,42 @@ class CoreTest {
         assertFailsWith<IllegalArgumentException> { ContentManager.safeFileName("  ") }
         assertEquals(listOf("Cool Mod.jar", "Cool+Mod.jar", "Cool_Mod.jar"), Launcher.downloadCandidates("Cool Mod.jar"))
         assertEquals(listOf("mod.jar"), Launcher.downloadCandidates("mod.jar"))
+    }
+
+    @Test
+    fun shareCodesAndPathsAreValidated() {
+        assertEquals("K7X-9QP", ShareService.normalizeCode(" k7x 9qp "))
+        assertEquals("K7X-9QP", ShareService.normalizeCode("K7X9QP"))
+        // 0, 1, I, L and O are not in the alphabet, so look-alikes can never be valid codes.
+        assertNull(ShareService.normalizeCode("K0X-9QP"))
+        assertNull(ShareService.normalizeCode("K7X-9Q"))
+
+        assertTrue(ShareService.isShareablePath("options.txt"))
+        assertTrue(ShareService.isShareablePath("config/sodium-options.json"))
+        assertTrue(ShareService.isShareablePath("config/create/client.toml"))
+        // A received pack may only ever write settings: never mods, jars, or anything outside.
+        for (bad in listOf(
+            "mods/evil.jar", "config/evil.jar", "config/../../evil.toml", "/etc/passwd", "config\\x.toml",
+            "C:/x.toml", "servers.dat", "config", "config//x.toml", "",
+        )) {
+            assertFalse(ShareService.isShareablePath(bad), bad)
+        }
+        assertTrue(ShareService.looksSensitive("config/discord-token.json"))
+        assertTrue(ShareService.looksSensitive("config/essential/microsoft_accounts.json"))
+        assertTrue(ShareService.looksSensitive("config/sodium-fingerprint.json"))
+        assertFalse(ShareService.looksSensitive("config/sodium-options.json"))
+    }
+
+    @Test
+    fun sharedPackRoundTripsAsJson() {
+        val pack = SharedPack(
+            name = "Pack", mcVersion = "1.21.1", loader = LoaderType.FABRIC, loaderVersion = "0.16.14",
+            content = listOf(SharedContent(ContentProvider.MODRINTH, "AANobbMI", "v1", ContentType.MOD, "Sodium", "sodium.jar", "aa", enabled = false)),
+            configs = mapOf("options.txt" to "fov:0.5"),
+        )
+        val text = LauncherJson.encodeToString(SharedPack.serializer(), pack)
+        assertEquals(pack, LauncherJson.decodeFromString<SharedPack>(text))
+        assertTrue(text.contains("\"format\":1"))
     }
 
     @Test

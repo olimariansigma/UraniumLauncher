@@ -15,7 +15,7 @@ The project is built in phases. Each phase compiles, is tested and is committed 
 | 1 | Project scaffold, vanilla install + launch on desktop, Modrinth search, CI | Done |
 | 2 | Microsoft/Xbox device-code login, Fabric / Quilt / Forge / NeoForge installs | Done |
 | 3 | Mod browser installs from Modrinth + CurseForge with dependency resolution, Prism import | Done |
-| 4 | Share codes (Cloudflare Worker + KV) | Planned |
+| 4 | Share codes (Cloudflare Worker + KV), GitHub releases | Done |
 | 5 | FPS optimisation: performance mods, JVM flag presets, options.txt presets | Planned |
 | 6 | Android game runtime (PojavLauncher approach, LGPL-3.0) | Planned |
 
@@ -33,6 +33,8 @@ What works today:
 - **Manage** installed content per instance: enable, disable, remove.
 - **Import** from Prism Launcher, MultiMC and PolyMC: the launcher searches the computer for their
   instances and copies worlds, mods and settings.
+- **Share codes**: turn an instance into a short code such as `K7X-9QP`; a friend enters it and
+  the launcher rebuilds the instance, downloading the same mods itself.
 - **Android**: the same UI, downloads and mod browser run, but the game cannot be started until
   phase 6 (and Forge/NeoForge cannot be installed there until then, as their installers need Java).
 
@@ -46,6 +48,7 @@ shared/        Kotlin Multiplatform module (Android + desktop JVM): core + Compo
   src/androidMain   Android storage and device info
 desktopApp/    Compose Desktop entry point, Windows MSI/EXE packaging, headless CLI
 androidApp/    Android application
+worker/        Cloudflare Worker that stores share codes (see worker/README.md)
 ```
 
 ## Building
@@ -64,49 +67,74 @@ Requires JDK 17 or newer (CI uses 21). The Android build also needs the Android 
 Every push runs `.github/workflows/build.yml`, which runs the tests and uploads the APK, MSI and
 EXE as workflow artifacts.
 
-## Service credentials
+### Publishing a release
 
-Two features need credentials that cannot be committed to the repository. Each can be supplied in
-three ways, checked in this order:
+On GitHub, open **Actions > Build > Run workflow**, tick **Publish the APK, MSI and EXE as a GitHub
+release** and run it. The files appear under **Releases** as version `v<uranium.version>` (set in
+`gradle.properties`). Running it again for the same version replaces the files.
 
-1. In the launcher: **Settings > Services** (stored in `settings.json`).
-2. At runtime, as an environment variable.
-3. At build time, as an environment variable or a property in `~/.gradle/gradle.properties`. The
-   value is compiled into the app, so everyone using that build gets it.
+## Setup you do yourself
 
-| Feature | Environment variable | Gradle property |
-| --- | --- | --- |
-| CurseForge browsing | `CURSEFORGE_API_KEY` | `uranium.curseforgeApiKey` |
-| Microsoft sign-in | `URANIUM_MSA_CLIENT_ID` | `uranium.msaClientId` |
+Three features talk to services that need something only the project owner can obtain. None of
+them is required: without them the launcher still installs and runs the game with offline
+profiles and Modrinth.
 
-For CI builds, add repository secrets with the same names as the environment variables
-(Settings > Secrets and variables > Actions). Anything compiled into an app can be extracted from
-it, so treat a built-in key as public and only use credentials that are meant for client apps.
+| Feature | What it needs | Is it secret? | Where it goes |
+| --- | --- | --- | --- |
+| Share codes | Address of your share server | No | Settings, or Actions variable `URANIUM_SHARE_URL` |
+| Microsoft sign-in | Microsoft application (client) id | No | Settings, or Actions variable `URANIUM_MSA_CLIENT_ID` |
+| CurseForge browsing | CurseForge API key | **Yes** | Settings only |
 
-### CurseForge API key
+Values under **Settings** in the launcher are stored only on that computer, in `settings.json`.
+Values set as Actions variables (repository **Settings > Secrets and variables > Actions**) are
+compiled into the builds that CI produces, which is why only the two non-secret ones are read
+there. Never put any of them in a file inside this repository.
 
-Request a key for a third-party client at <https://console.curseforge.com>. Modrinth needs no key.
+### Share codes
+
+Deploy the worker by following [worker/README.md](worker/README.md) and use the address it prints.
 
 ### Microsoft sign-in
 
-Microsoft sign-in needs an application id of your own:
+The launcher needs its own application id from Microsoft. An application id only identifies the
+app; it is not a password and there is no client secret (do not create one).
 
-1. Open the [Azure portal](https://portal.azure.com) and go to **Microsoft Entra ID > App
-   registrations > New registration**.
-2. Give it a name, choose **Personal Microsoft accounts only** as the supported account type, and
-   leave the redirect URI empty.
-3. In the new registration, open **Authentication** and set **Allow public client flows** to
-   **Yes**. The device-code flow does not work without it.
-4. Copy the **Application (client) ID** and supply it in one of the three ways above.
-5. New application ids must be approved by Mojang before Minecraft services accept them. Apply at
-   <https://aka.ms/mce-reviewappid>. Until then sign-in gets as far as Xbox Live and then fails
-   with a message saying the application id was rejected.
+1. Registering an app needs a Microsoft Entra directory. A personal Microsoft account does not
+   have one until you sign up for a free Azure account at <https://azure.microsoft.com/free>,
+   which asks for a phone number and a payment card for identity verification.
+2. Open <https://entra.microsoft.com> and go to **Entra ID > App registrations > New
+   registration**.
+3. Enter a name, choose **Personal accounts only** under *Supported account types*, leave the
+   redirect URI empty and press **Register**.
+4. In the new registration open **Authentication** and switch **Allow public client flows** on.
+   The device-code sign-in the launcher uses does not work without it.
+5. Copy the **Application (client) ID** from the Overview page into the launcher's Settings, or
+   into the Actions variable `URANIUM_MSA_CLIENT_ID`.
+6. Ask Mojang to allow the new id: fill in the form at <https://aka.ms/mce-reviewappid>. Until it
+   is approved, sign-in reaches Xbox Live and then stops with a message that the application id
+   was rejected. See also <https://aka.ms/AppRegInfo>.
 
 `./gradlew :desktopApp:run --args="--cli login"` runs the whole flow in a terminal, which is handy
 for checking a new id.
 
 Accounts, including their session tokens, are stored unencrypted in `accounts.json` in the data
-folder, the same way the game's own launcher profile files are.
+folder, the same way the game's own launcher profile files are. Never share that file.
+
+### CurseForge API key
+
+CurseForge only issues keys for third-party launchers on request: apply through the form linked
+from <https://support.curseforge.com/support/solutions/articles/9000208346> and the key arrives
+by email once the request is approved. CurseForge's terms say the key may not be disclosed to
+anyone else, so:
+
+- paste it only into **Settings > Services** on your own computer;
+- do not commit it, post it or send it to anyone;
+- CI does not build it into the published apps, because anything inside a downloadable app can be
+  read out again. People who use your builds add their own key the same way, or use Modrinth,
+  which needs no key.
+
+For a private build of your own you can still compile it in by setting `CURSEFORGE_API_KEY` (or
+`uranium.curseforgeApiKey` in `~/.gradle/gradle.properties`) when you run Gradle yourself.
 
 ### Headless CLI
 
@@ -120,6 +148,8 @@ The desktop app doubles as a small CLI, useful for smoke tests:
 ./gradlew :desktopApp:run --args="--cli search sodium"
 ./gradlew :desktopApp:run --args="--cli search jei --curseforge"
 ./gradlew :desktopApp:run --args="--cli scan"
+./gradlew :desktopApp:run --args="--cli share <instance id>"
+./gradlew :desktopApp:run --args="--cli redeem K7X-9QP"
 ```
 
 ## Where files go
@@ -143,3 +173,4 @@ the game directory in `instances/<id>/minecraft` and the list of launcher-instal
 - [Modrinth API v2](https://docs.modrinth.com). Requests carry a descriptive `User-Agent`, as the
   API requires.
 - [CurseForge Core API](https://docs.curseforge.com/rest-api/).
+- Your own share server, if you set one up.

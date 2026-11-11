@@ -39,6 +39,9 @@ import dev.uranium.launcher.loader.LoaderService
 import dev.uranium.launcher.loader.LoaderVersion
 import dev.uranium.launcher.mojang.MojangMeta
 import dev.uranium.launcher.net.Http
+import dev.uranium.launcher.share.RedeemOutcome
+import dev.uranium.launcher.share.ShareService
+import dev.uranium.launcher.share.SharedPack
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -120,6 +123,8 @@ class Launcher(val platform: PlatformServices = dev.uranium.launcher.core.platfo
         ),
     )
 
+    val share = ShareService(http, paths, content, serverUrl = ::shareServerUrl)
+
     private val _instances = MutableStateFlow<List<Instance>>(emptyList())
     val instances: StateFlow<List<Instance>> get() = _instances
 
@@ -180,6 +185,10 @@ class Launcher(val platform: PlatformServices = dev.uranium.launcher.core.platfo
 
     fun curseForgeApiKey(): String = _settings.value.curseForgeApiKey.trim().ifEmpty {
         platform.env("CURSEFORGE_API_KEY") ?: BuildInfo.CURSEFORGE_API_KEY
+    }
+
+    fun shareServerUrl(): String = _settings.value.shareServerUrl.trim().ifEmpty {
+        platform.env("URANIUM_SHARE_URL") ?: BuildInfo.SHARE_URL
     }
 
     // ---- Accounts -----------------------------------------------------------------------------
@@ -500,6 +509,27 @@ class Launcher(val platform: PlatformServices = dev.uranium.launcher.core.platfo
         val instance = importer.import(foreign, platform.nowMillis(), progress)
         _instances.value = instanceStore.list()
         return instance
+    }
+
+    // ---- Share codes -------------------------------------------------------------------------
+
+    /**
+     * Creates a new instance from a shared pack and downloads its content. The instance is kept
+     * even when some items could not be fetched; the outcome says which.
+     */
+    suspend fun redeemPack(pack: SharedPack, progress: ProgressListener = {}): RedeemOutcome {
+        val instance = createInstance(pack.name.take(48), pack.mcVersion, pack.loader, pack.loaderVersion)
+        try {
+            val (outcome, blocked) = share.apply(pack, instance, progress)
+            if (blocked.isNotEmpty()) addBlocked(blocked)
+            _contentRevision.update { it + 1 }
+            return outcome
+        } catch (e: CancellationException) {
+            // Cancelled half way: do not leave a partial instance lying around.
+            withContext(kotlinx.coroutines.NonCancellable) { runCatching { instanceStore.delete(instance.id) } }
+            _instances.value = instanceStore.list()
+            throw e
+        }
     }
 
     companion object {

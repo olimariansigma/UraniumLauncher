@@ -67,6 +67,8 @@ fun HomeScreen(launcher: Launcher, compact: Boolean, onOpen: (String) -> Unit) {
     val accounts by launcher.accounts.collectAsState()
     var showCreate by remember { mutableStateOf(false) }
     var showImport by remember { mutableStateOf(false) }
+    var showRedeem by remember { mutableStateOf(false) }
+    var moreMenu by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<Instance?>(null) }
     val pad = if (compact) 16.dp else 28.dp
     val canOpenFolder = launcher.platform.os != OsType.ANDROID
@@ -80,7 +82,21 @@ fun HomeScreen(launcher: Launcher, compact: Boolean, onOpen: (String) -> Unit) {
                 else -> "${instances.size} instances ready."
             },
         ) {
-            if (launcher.canImport && !compact) OutlinedButton(onClick = { showImport = true }) { Text("Import") }
+            if (compact) {
+                // Phones get the secondary actions behind one button to keep the header on one line.
+                Box {
+                    IconButton(onClick = { moreMenu = true }) { Icon(Icons.Default.MoreVert, contentDescription = "More actions") }
+                    DropdownMenu(expanded = moreMenu, onDismissRequest = { moreMenu = false }) {
+                        DropdownMenuItem(text = { Text("Use a share code") }, onClick = { moreMenu = false; showRedeem = true })
+                        if (launcher.canImport) {
+                            DropdownMenuItem(text = { Text("Import from Prism") }, onClick = { moreMenu = false; showImport = true })
+                        }
+                    }
+                }
+            } else {
+                OutlinedButton(onClick = { showRedeem = true }) { Text("Use code") }
+                if (launcher.canImport) OutlinedButton(onClick = { showImport = true }) { Text("Import") }
+            }
             Button(onClick = { showCreate = true }) {
                 Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
@@ -148,6 +164,7 @@ fun HomeScreen(launcher: Launcher, compact: Boolean, onOpen: (String) -> Unit) {
         )
     }
     if (showImport) ImportDialog(launcher, onDismiss = { showImport = false })
+    if (showRedeem) RedeemDialog(launcher, onDismiss = { showRedeem = false }, onOpen = onOpen)
 
     pendingDelete?.let { instance ->
         AlertDialog(

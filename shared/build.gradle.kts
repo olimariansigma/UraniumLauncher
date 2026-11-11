@@ -16,14 +16,18 @@ val msaClientId = providers.environmentVariable("URANIUM_MSA_CLIENT_ID")
     .orElse(providers.gradleProperty("uranium.msaClientId")).orElse("")
 val curseForgeKey = providers.environmentVariable("CURSEFORGE_API_KEY")
     .orElse(providers.gradleProperty("uranium.curseforgeApiKey")).orElse("")
+val shareServerUrl = providers.environmentVariable("URANIUM_SHARE_URL")
+    .orElse(providers.gradleProperty("uranium.shareUrl")).orElse("")
 val generateBuildInfo = tasks.register("generateBuildInfo") {
     val outputDir = layout.buildDirectory.dir("generated/buildInfo/kotlin")
     val version = appVersion
     val clientId = msaClientId
     val cfKey = curseForgeKey
+    val shareUrl = shareServerUrl
     inputs.property("version", version)
     inputs.property("msaClientId", clientId)
     inputs.property("curseForgeKey", cfKey)
+    inputs.property("shareUrl", shareUrl)
     outputs.dir(outputDir)
     doLast {
         // CurseForge keys contain '$', which would otherwise start a Kotlin string template.
@@ -39,6 +43,7 @@ val generateBuildInfo = tasks.register("generateBuildInfo") {
             |    const val VERSION = "${literal(version.get())}"
             |    const val MSA_CLIENT_ID = "${literal(clientId.get())}"
             |    const val CURSEFORGE_API_KEY = "${literal(cfKey.get())}"
+            |    const val SHARE_URL = "${literal(shareUrl.get())}"
             |}
             |""".trimMargin()
         )

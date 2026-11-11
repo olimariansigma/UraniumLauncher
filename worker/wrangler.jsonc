@@ -1,0 +1,8 @@
+{
+  "name": "uranium-share",
+  "main": "src/index.js",
+  "compatibility_date": "2026-11-01",
+  // No "id" on purpose: `npx wrangler deploy` creates the KV namespace on first deploy and writes
+  // its id back into this file. That id is not a secret; committing it afterwards is fine.
+  "kv_namespaces": [{ "binding": "PACKS" }]
+}

@@ -13,7 +13,8 @@ android {
         applicationId = "dev.uranium.launcher"
         minSdk = libs.versions.androidMinSdk.get().toInt()
         targetSdk = libs.versions.androidTargetSdk.get().toInt()
-        versionCode = 1
+        // major * 10000 + minor * 100 + patch, so every release installs over the previous one.
+        versionCode = appVersion.split('.').map { it.toInt() }.let { (major, minor, patch) -> major * 10000 + minor * 100 + patch }
         versionName = appVersion
     }
 

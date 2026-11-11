@@ -21,6 +21,8 @@ data class Settings(
     /** Overrides for the credentials baked in at build time; blank = use the built-in ones. */
     val msaClientId: String = "",
     val curseForgeApiKey: String = "",
+    /** Address of the share-code server (the Cloudflare Worker in `worker/`). */
+    val shareServerUrl: String = "",
 )
 
 class SettingsStore(private val paths: LauncherPaths, private val fs: FileSystem = FileSystem.SYSTEM) {

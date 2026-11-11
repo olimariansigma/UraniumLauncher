@@ -106,7 +106,7 @@ fun SettingsScreen(launcher: Launcher, compact: Boolean) {
 
         Panel(column) {
             SectionTitle("Services")
-            Hint("These override the credentials built into this copy of the launcher. Leave them empty to use the built-in ones.")
+            Hint("Stored only on this device, in settings.json. Leave a field empty to use the value built into this copy of the launcher, if there is one.")
             OutlinedTextField(
                 value = settings.curseForgeApiKey,
                 onValueChange = { value -> launcher.updateSettings { it.copy(curseForgeApiKey = value.trim()) } },
@@ -123,6 +123,19 @@ fun SettingsScreen(launcher: Launcher, compact: Boolean) {
                 label = { Text("Microsoft application (client) id") },
                 placeholder = { Text(if (BuildInfo.MSA_CLIENT_ID.isNotEmpty()) "Using the built-in id" else "Not set") },
                 supportingText = { Text("Needed for Microsoft sign-in. See the README for how to register one.") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+
+        Panel(column) {
+            SectionTitle("Share codes")
+            OutlinedTextField(
+                value = settings.shareServerUrl,
+                onValueChange = { value -> launcher.updateSettings { it.copy(shareServerUrl = value.trim()) } },
+                label = { Text("Share server address") },
+                placeholder = { Text(if (BuildInfo.SHARE_URL.isNotEmpty()) "Using the built-in server" else "https://uranium-share.example.workers.dev") },
+                supportingText = { Text("The Cloudflare Worker that stores share codes. You and your friends must use the same address.") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )

@@ -19,6 +19,8 @@ import kotlin.system.exitProcess
  *     --cli launch <version> [--loader <loader>] [--dry-run]
  *     --cli search <query> [--curseforge]             search Modrinth or CurseForge
  *     --cli scan                                      look for Prism Launcher instances
+ *     --cli share <instance id> [--no-configs]        upload an instance and print its share code
+ *     --cli redeem <code>                             build an instance from a share code
  *     --cli login                                     test Microsoft sign-in (prints a device code)
  */
 object Cli {
@@ -75,6 +77,24 @@ object Cli {
                     result.hits.forEach { println("  ${it.title} by ${it.author} - ${it.downloads} downloads (${it.pageUrl})") }
                     0
                 }
+                "share" -> {
+                    val id = args.getOrNull(1) ?: return@runBlocking usage()
+                    val instance = launcher.instances.value.firstOrNull { it.id == id } ?: error("No instance with id \"$id\"")
+                    val preview = launcher.share.preview(instance, includeConfigs = "--no-configs" !in args)
+                    println("${preview.pack.content.size} items, ${preview.configFiles} config files, ${preview.sizeBytes} bytes")
+                    if (preview.unshareable.isNotEmpty()) println("Not shareable: ${preview.unshareable.joinToString()}")
+                    val ticket = launcher.share.upload(preview.pack)
+                    println("Share code: ${ticket.code} (expires ${ticket.expiresAt})")
+                    0
+                }
+                "redeem" -> {
+                    val pack = launcher.share.fetch(args.getOrNull(1) ?: return@runBlocking usage())
+                    println("${pack.name}: Minecraft ${pack.mcVersion} ${pack.loader.displayName}, ${pack.content.size} items, ${pack.configs.size} config files")
+                    val outcome = launcher.redeemPack(pack)
+                    println("Created instance ${outcome.instanceId}: ${outcome.installed} installed, ${outcome.blocked} need a manual download")
+                    outcome.skipped.forEach { println("  skipped $it") }
+                    0
+                }
                 "login" -> {
                     val code = launcher.microsoft.requestDeviceCode()
                     println("Open ${code.verificationUri} and enter the code ${code.userCode}")
@@ -97,7 +117,7 @@ object Cli {
     private fun usage(): Int {
         System.err.println(
             "Usage: --cli versions | loaders <loader> <version> | install <version> [--loader <loader>] | " +
-                "launch <version> [--loader <loader>] [--dry-run] | search <query> [--curseforge] | scan | login"
+                "launch <version> [--loader <loader>] [--dry-run] | search <query> [--curseforge] | scan | share <instance id> | redeem <code> | login"
         )
         return 2
     }

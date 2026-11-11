@@ -4,18 +4,26 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+    inputs:
+      release:
+        description: "Publish the APK, MSI and EXE as a GitHub release"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
-# Optional service credentials, baked into the builds when the repository secrets exist.
-# Without them the launcher still builds; players can add their own under Settings > Services.
+# Optional values compiled into the builds when they are set under
+# Settings > Secrets and variables > Actions (as a variable or a secret; either works).
+# Both are public by nature: a Microsoft application id is an identifier, not a password, and the
+# share server address is just a URL. The CurseForge API key is deliberately NOT built in:
+# CurseForge's terms forbid disclosing it, and anything inside a downloadable app can be read out.
 env:
-  CURSEFORGE_API_KEY: ${{ secrets.CURSEFORGE_API_KEY }}
-  URANIUM_MSA_CLIENT_ID: ${{ secrets.URANIUM_MSA_CLIENT_ID }}
+  URANIUM_MSA_CLIENT_ID: ${{ vars.URANIUM_MSA_CLIENT_ID || secrets.URANIUM_MSA_CLIENT_ID }}
+  URANIUM_SHARE_URL: ${{ vars.URANIUM_SHARE_URL || secrets.URANIUM_SHARE_URL }}
 
 concurrency:
-  group: build-${{ github.ref }}
+  group: build-${{ github.ref }}-${{ inputs.release && 'release' || 'ci' }}
   cancel-in-progress: true
 
 jobs:
@@ -30,6 +38,9 @@ jobs:
           java-version: 21
       - uses: gradle/actions/setup-gradle@v5
       - run: ./gradlew :shared:allTests --console=plain
+      - name: Share server tests
+        working-directory: worker
+        run: npm test
 
   android:
     name: Android APK
@@ -80,3 +91,42 @@ jobs:
           name: UraniumLauncher-windows-exe
           path: desktopApp/build/compose/binaries/main/exe/*.exe
           if-no-files-found: error
+
+  # Runs only when started by hand with "release" ticked (Actions > Build > Run workflow), or for
+  # a pushed tag such as v0.2.0. Publishes the files built above; nothing is rebuilt here.
+  release:
+    name: Publish release
+    if: (github.event_name == 'workflow_dispatch' && inputs.release) || startsWith(github.ref, 'refs/tags/v')
+    needs: [test, android, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(grep '^uranium.version=' gradle.properties | cut -d= -f2)
+          tag="v$version"
+          mkdir out
+          mv dist/*.apk "out/UraniumLauncher-$version-android.apk"
+          mv dist/*.msi "out/UraniumLauncher-$version-windows.msi"
+          mv dist/*.exe "out/UraniumLauncher-$version-windows-setup.exe"
+          (cd out && sha256sum * > SHA256SUMS.txt)
+          cat > notes.md <<NOTES
+          ## Downloads
+          - **Windows**: \`UraniumLauncher-$version-windows-setup.exe\` (or the \`.msi\`). Windows SmartScreen warns because the installer is not code-signed yet: choose *More info > Run anyway*.
+          - **Android**: \`UraniumLauncher-$version-android.apk\`. The launcher UI, downloads and mod browser work; starting the game on Android is not implemented yet.
+
+          Not an official Minecraft product. Not approved by or associated with Mojang or Microsoft.
+          NOTES
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" out/* --clobber
+          else
+            gh release create "$tag" out/* --target "$GITHUB_SHA" --title "Uranium Launcher $version" --notes-file notes.md
+          fi
